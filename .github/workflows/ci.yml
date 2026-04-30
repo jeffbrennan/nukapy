@@ -3,6 +3,10 @@ name: CI
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   quality:
     name: Python ${{ matrix.python-version }}
@@ -12,6 +16,15 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
+      - name: Mark required check pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -f state=pending \
+            -f context="Python ${{ matrix.python-version }}" \
+            -f description="Manual CI in progress" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
@@ -24,3 +37,19 @@ jobs:
       - run: uv run pytest -m integration
         env:
           SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
+      - name: Mark required check result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=success
+          description="Manual CI succeeded"
+          if [ "${{ job.status }}" != "success" ]; then
+            state=failure
+            description="Manual CI failed"
+          fi
+          gh api --method POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -f state="$state" \
+            -f context="Python ${{ matrix.python-version }}" \
+            -f description="$description" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
