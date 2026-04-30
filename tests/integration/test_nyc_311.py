@@ -1,5 +1,6 @@
 import os
 
+import httpx
 import pytest
 
 from nukapy import Socrata
@@ -9,10 +10,16 @@ ROW_LIMIT = 5
 
 @pytest.mark.integration
 def test_get_fetches_live_nyc_311_rows() -> None:
-    rows = Socrata(
-        "data.cityofnewyork.us",
-        app_token=os.environ.get("SOCRATA_APP_TOKEN"),
-    ).get("erm2-nwe9", limit=ROW_LIMIT)
+    app_token = os.environ.get("SOCRATA_APP_TOKEN")
+    if not app_token:
+        pytest.skip("SOCRATA_APP_TOKEN not set")
+
+    try:
+        rows = Socrata("data.cityofnewyork.us", app_token=app_token).get(
+            "erm2-nwe9", limit=ROW_LIMIT
+        )
+    except (httpx.ReadTimeout, httpx.ConnectError) as exc:
+        pytest.skip(f"Network unavailable: {exc}")
 
     assert len(rows) == ROW_LIMIT
     assert all(isinstance(row, dict) for row in rows)
