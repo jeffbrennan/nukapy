@@ -16,3 +16,6 @@ test-integration:
 test-all: test test-integration
 
 quality: format lint typecheck test-all
+
+ci branch=`git branch --show-current`:
+	gh workflow run CI --ref "{{branch}}"
