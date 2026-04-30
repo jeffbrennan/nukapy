@@ -4,6 +4,8 @@ from typing import Any, cast
 
 import httpx
 
+from nukapy._internal.auth import get_app_token
+
 
 class Socrata:
     """Small sync client for the Socrata Open Data API."""
@@ -13,7 +15,7 @@ class Socrata:
         self.domain = (
             domain.removeprefix("https://").removeprefix("http://").rstrip("/")
         )
-        self.app_token = app_token
+        self.app_token = app_token or get_app_token()
 
     def get(self, dataset_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
         """Fetch rows from a Socrata dataset."""
