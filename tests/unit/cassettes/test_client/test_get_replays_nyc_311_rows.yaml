@@ -1,0 +1,72 @@
+interactions:
+- request:
+    body: ''
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Host:
+      - data.cityofnewyork.us
+      User-Agent:
+      - python-httpx/0.28.1
+    method: GET
+    uri: https://data.cityofnewyork.us/resource/erm2-nwe9.json?%24limit=5
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAAO2V32/aMBDH3/dXWDy3XRIobXgLYDpUmjAntKqmKXITA1aDnTnOpG7a/75zBAwG
+        tOxHNSbxksS+753Pd/dRPnytlYJ/Kln8yJ5qrVrz8tKxrIZVO6klilHN0jiFJ1gcy2meWo1Tx40s
+        p9VwW+fWmWVVwkwW++johInEHNINouUyFnRm3Losp0rPmNBIjlGkqChyqTTVXApzhpzlGeVCx/op
+        N/pQK8Y06kiR8rkmZUWieK6lAvtQ6qnMGGxzkfAU4sZfeA4G227UG6vbNE0VKwow3WBC+p1r1A5G
+        A3zrkS7IiuqcRZbbFImSRRHPdTaI2nhw7XtDFEYE4+hnhQOKnkcgUrgWZp7G4n7tQdC57nkdbPy5
+        NmV7P8LYD2E9pgnPYG+h9d96VaZUl+YanaofsAPxZFaa6sSL2phKtWrRlKHnCo5SppmaccFSpKdU
+        w4MXaNkDBAuK0jLPeAJNN/4U5Yp95rIssic05hk4LuVnyJwnFZ9wQbP1MA+Miwma352lZ+tZ06R6
+        lXm65yTK2QzGGSrzIKlKTbcdtCxbLiFfFkOiCTRfg3UEd4bFmFflepBKlpPpaqVlzoQ5lsbJlArB
+        skXJR/61H9z5JipVj/GyI/M5WQ9cSTaif3tzsh0+ew/4bGc/+Ja6I3xH+F4Fvh+T+N/DZ180XfdF
+        +C5bjntwUNW3Q3U1ukcEtQm+w+QZsnbKNvHqh++CISJBF1csEtTxcOgRFBJ0591v4822XOTdYn+E
+        /ypoAUzHH2Gm2JgpVUG2xpeWsMMQzXMlc8UNYzfGwAQVCUMjGHE0lgr8c8rV70CzMkG/Cs1w/ols
+        q34g1Di26zovUnPRcpqHRo1jbadmgHs9TKLwGWK2SjZo8e+HXRR2rtAgIMTr+xgNER4M+kEU7aTF
+        Pj/SsmtyttBi7UlL80BosesNq/EiLc0D/MfY7ivT4q5M/gYX7sURi10jsokF/HL3w8L5B1h8fPMd
+        u0Z+ynYQAAA=
+    headers:
+      Access-Control-Allow-Origin:
+      - '*'
+      Connection:
+      - keep-alive
+      Content-Encoding:
+      - gzip
+      Content-Type:
+      - application/json;charset=utf-8
+      Date:
+      - Thu, 30 Apr 2026 12:41:05 GMT
+      ETag:
+      - '"Zm94dHJvdC4xNTY1NV8xODNfMTkxNTUzX1hpbnVYY3N0bzRDbkNwQzRfVkVTTi1BY3Jv---gzipBgFVTjIBTXt7UpkQYeSPXovG_yg--gzip--gzip"'
+      Last-Modified:
+      - Thu, 30 Apr 2026 01:53:40 GMT
+      Server:
+      - nginx
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Accept-Encoding
+      X-SODA2-Data-Out-Of-Date:
+      - 'false'
+      X-SODA2-Fields:
+      - '["unique_key","created_date","closed_date","agency","agency_name","complaint_type","descriptor","descriptor_2","location_type","incident_zip","incident_address","street_name","cross_street_1","cross_street_2","intersection_street_1","intersection_street_2","address_type","city","landmark","facility_type","status","due_date","resolution_description","resolution_action_updated_date","community_board","council_district","police_precinct","bbl","borough","x_coordinate_state_plane","y_coordinate_state_plane","open_data_channel_type","park_facility_name","park_borough","vehicle_type","taxi_company_borough","taxi_pick_up_location","bridge_highway_name","bridge_highway_direction","road_ramp","bridge_highway_segment","latitude","longitude","location",":@computed_region_f5dn_yrer",":@computed_region_yeji_bk3q",":@computed_region_sbqj_enih",":@computed_region_92fq_4b7q"]'
+      X-SODA2-Secondary-Last-Modified:
+      - Thu, 30 Apr 2026 01:53:40 GMT
+      X-SODA2-Truth-Last-Modified:
+      - Thu, 30 Apr 2026 01:53:40 GMT
+      X-SODA2-Types:
+      - '["text","floating_timestamp","floating_timestamp","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","text","floating_timestamp","text","floating_timestamp","text","text","text","text","text","number","number","text","text","text","text","text","text","text","text","text","text","number","number","point","number","number","number","number"]'
+      X-Socrata-RequestId:
+      - cb6f38d77342ad004f88c35de8d48c7a
+    status:
+      code: 200
+      message: OK
+version: 1

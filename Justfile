@@ -8,6 +8,11 @@ typecheck:
 	uv run pyright
 
 test:
-	uv run pytest
+	uv run pytest -m "not integration"
 
-quality: format lint typecheck test
+test-integration:
+	uv run pytest -m integration
+
+test-all: test test-integration
+
+quality: format lint typecheck test-all

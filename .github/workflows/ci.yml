@@ -22,4 +22,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run pyright
-      - run: uv run pytest
+      - run: uv run pytest -m "not integration"
+      - run: uv run pytest -m integration
+        env:
+          SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
