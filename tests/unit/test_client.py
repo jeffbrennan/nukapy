@@ -62,6 +62,18 @@ def test_get_falls_back_to_v21_when_v3_is_unavailable() -> None:
 
 
 @respx.mock
+def test_get_accepts_select_param() -> None:
+    respx.get("https://data.cityofnewyork.us/api/v3/views/erm2-nwe9/query.json").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+
+    with Socrata("data.cityofnewyork.us", app_token="test-token") as client:
+        client.get("erm2-nwe9", limit=1, select="unique_key,complaint_type")
+
+    assert respx.calls.last.request.url.params["$select"] == "unique_key,complaint_type"
+
+
+@respx.mock
 def test_get_sends_app_token_header() -> None:
     respx.get("https://data.cityofnewyork.us/api/v3/views/erm2-nwe9/query.json").mock(
         return_value=httpx.Response(200, json=[])

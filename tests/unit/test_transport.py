@@ -136,6 +136,21 @@ async def test_async_transport_api_key_secret_use_basic_auth() -> None:
     assert respx.calls.last.request.headers["Authorization"] == f"Basic {credentials}"
 
 
+async def test_async_transport_preserves_client_timeout() -> None:
+    async with AsyncTransport(domain="example.test", timeout=5.0) as transport:
+        with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as request_mock:
+            request_mock.return_value = httpx.Response(
+                200,
+                json=[],
+                request=httpx.Request("GET", TEST_URL),
+            )
+
+            await transport.request(Request(method="GET", path=TEST_PATH))
+
+    assert request_mock.await_args is not None
+    assert "timeout" not in request_mock.await_args.kwargs
+
+
 @respx.mock
 @pytest.mark.parametrize(
     ("status_code", "error_type"),

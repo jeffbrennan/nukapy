@@ -85,10 +85,14 @@ class AsyncSocrata:
         )
 
     async def get(
-        self, dataset_id: str, *, limit: int | None = None
+        self,
+        dataset_id: str,
+        *,
+        limit: int | None = None,
+        select: str | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch rows from a Socrata dataset."""
-        params = _row_params(limit)
+        params = _row_params(limit=limit, select=select)
         response = await self._request_read(dataset_id, params)
         return _rows_from_response(response)
 
@@ -217,9 +221,15 @@ class Socrata:
             concurrency_limit=self._config.concurrency_limit,
         )
 
-    def get(self, dataset_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+    def get(
+        self,
+        dataset_id: str,
+        *,
+        limit: int | None = None,
+        select: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch rows from a Socrata dataset."""
-        params = _row_params(limit)
+        params = _row_params(limit=limit, select=select)
         response = self._request_read(dataset_id, params)
         return _rows_from_response(response)
 
@@ -327,8 +337,10 @@ def _build_config(  # noqa: PLR0913
     )
 
 
-def _row_params(limit: int | None) -> dict[str, int]:
-    params: dict[str, int] = {}
+def _row_params(*, limit: int | None, select: str | None) -> dict[str, str | int]:
+    params: dict[str, str | int] = {}
+    if select is not None:
+        params["$select"] = select
     if limit is not None:
         params["$limit"] = limit
     return params

@@ -149,15 +149,25 @@ class AsyncTransport:
         url = self._request_url(req.path)
 
         try:
-            raw = await self._client.request(
-                req.method,
-                req.path,
-                params=req.params,
-                headers=headers,
-                content=req.body,
-                timeout=req.timeout,
-                auth=self._auth,
-            )
+            if req.timeout is None:
+                raw = await self._client.request(
+                    req.method,
+                    req.path,
+                    params=req.params,
+                    headers=headers,
+                    content=req.body,
+                    auth=self._auth,
+                )
+            else:
+                raw = await self._client.request(
+                    req.method,
+                    req.path,
+                    params=req.params,
+                    headers=headers,
+                    content=req.body,
+                    timeout=req.timeout,
+                    auth=self._auth,
+                )
         except httpx.TimeoutException as exc:
             msg = f"Request timed out for {url}"
             raise NukapyTimeoutError(msg, request_url=url) from exc
