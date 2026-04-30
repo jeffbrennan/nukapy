@@ -1,9 +1,10 @@
 import os
 
-import httpx
 import pytest
 
 from nukapy import Socrata
+from nukapy.errors import ConnectError
+from nukapy.errors import TimeoutError as NukapyTimeoutError
 
 ROW_LIMIT = 5
 
@@ -18,7 +19,7 @@ def test_get_fetches_live_nyc_311_rows() -> None:
         rows = Socrata("data.cityofnewyork.us", app_token=app_token).get(
             "erm2-nwe9", limit=ROW_LIMIT
         )
-    except (httpx.ReadTimeout, httpx.ConnectError) as exc:
+    except (NukapyTimeoutError, ConnectError) as exc:
         pytest.skip(f"Network unavailable: {exc}")
 
     assert len(rows) == ROW_LIMIT
