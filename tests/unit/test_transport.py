@@ -68,9 +68,7 @@ def test_response_json_is_lazy() -> None:
 
 @respx.mock
 async def test_async_transport_get_returns_json() -> None:
-    route = respx.get(TEST_URL).mock(
-        return_value=httpx.Response(200, json={"ok": True})
-    )
+    route = respx.get(TEST_URL).mock(return_value=httpx.Response(200, json={"ok": True}))
 
     async with AsyncTransport(domain="example.test", app_token="token") as transport:
         response = await transport.request(Request(method="GET", path=TEST_PATH))
@@ -85,9 +83,7 @@ async def test_async_transport_get_returns_json() -> None:
     ("app_token", "expected"),
     [("abc123", "abc123"), (None, None)],
 )
-async def test_async_transport_auth_header(
-    app_token: str | None, expected: str | None
-) -> None:
+async def test_async_transport_auth_header(app_token: str | None, expected: str | None) -> None:
     respx.get(TEST_URL).mock(return_value=httpx.Response(200, json=[]))
 
     async with AsyncTransport(domain="example.test", app_token=app_token) as transport:
@@ -167,12 +163,8 @@ async def test_async_transport_preserves_client_timeout() -> None:
         (504, GatewayTimeoutError),
     ],
 )
-async def test_http_error_mapping(
-    status_code: int, error_type: type[HTTPError]
-) -> None:
-    respx.get(TEST_URL).mock(
-        return_value=httpx.Response(status_code, content=b"error body")
-    )
+async def test_http_error_mapping(status_code: int, error_type: type[HTTPError]) -> None:
+    respx.get(TEST_URL).mock(return_value=httpx.Response(status_code, content=b"error body"))
 
     async with AsyncTransport(
         domain="example.test", retry_policy=RetryPolicy(max_attempts=1)
@@ -274,9 +266,7 @@ async def test_rate_limit_state_updates_from_headers() -> None:
 
         assert transport.rate_limit_state.limit == RATE_LIMIT
         assert transport.rate_limit_state.remaining == 0
-        assert transport.rate_limit_state.reset_at == dt.datetime.fromtimestamp(
-            reset_at, tz=dt.UTC
-        )
+        assert transport.rate_limit_state.reset_at == dt.datetime.fromtimestamp(reset_at, tz=dt.UTC)
         assert transport.rate_limit_state.is_exhausted()
         assert transport.rate_limit_state.seconds_until_reset() > 0
 
@@ -305,10 +295,7 @@ async def test_concurrency_limit_bounds_in_flight_requests() -> None:
         domain="example.test", concurrency_limit=CONCURRENCY_LIMIT
     ) as transport:
         responses = await asyncio.gather(
-            *(
-                transport.request(Request(method="GET", path=TEST_PATH))
-                for _ in range(10)
-            )
+            *(transport.request(Request(method="GET", path=TEST_PATH)) for _ in range(10))
         )
 
     assert all(response.status_code == HTTP_OK for response in responses)
@@ -394,9 +381,7 @@ def test_retry_policy_delay_within_bounds() -> None:
 def test_retry_after_http_date_and_fallback() -> None:
     policy = RetryPolicy(max_delay=HEADER_MAX_DELAY)
     retry_at = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=30)
-    headers: dict[str, str] = {
-        "retry-after": retry_at.strftime("%a, %d %b %Y %H:%M:%S GMT")
-    }
+    headers: dict[str, str] = {"retry-after": retry_at.strftime("%a, %d %b %Y %H:%M:%S GMT")}
 
     assert 0.0 <= retry_after_delay(headers, 0, policy) <= HEADER_MAX_DELAY
     assert 0.0 <= retry_after_delay({"retry-after": "not-a-date"}, 0, policy) <= 1.0

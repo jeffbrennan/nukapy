@@ -46,9 +46,9 @@ async def test_async_get_returns_rows() -> None:
 @respx.mock
 def test_get_falls_back_to_v21_when_v3_is_unavailable() -> None:
     mock_rows = [{"unique_key": "42", "complaint_type": "Noise"}]
-    v3_route = respx.get(
-        "https://data.cityofnewyork.us/api/v3/views/erm2-nwe9/query.json"
-    ).mock(return_value=httpx.Response(404))
+    v3_route = respx.get("https://data.cityofnewyork.us/api/v3/views/erm2-nwe9/query.json").mock(
+        return_value=httpx.Response(404)
+    )
     v21_route = respx.get("https://data.cityofnewyork.us/resource/erm2-nwe9.json").mock(
         return_value=httpx.Response(200, json=mock_rows)
     )

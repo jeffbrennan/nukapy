@@ -59,9 +59,7 @@ class Response:
     status: int
     headers: Mapping[str, str]
     content: bytes
-    _json: object = dataclasses.field(
-        default=_JSON_UNSET, init=False, repr=False, compare=False
-    )
+    _json: object = dataclasses.field(default=_JSON_UNSET, init=False, repr=False, compare=False)
 
     @property
     def status_code(self) -> int:
@@ -217,9 +215,7 @@ class AsyncTransport:
                 stacklevel=2,
             )
 
-    def _request_headers(
-        self, request_headers: Mapping[str, str] | None
-    ) -> dict[str, str]:
+    def _request_headers(self, request_headers: Mapping[str, str] | None) -> dict[str, str]:
         headers = dict(self._base_headers)
         headers.setdefault("User-Agent", self._user_agent)
         headers.update(request_headers or {})
@@ -246,16 +242,12 @@ class Transport:
             name="nukapy-transport",
         )
         self._thread.start()
-        future = asyncio.run_coroutine_threadsafe(
-            _create_async_transport(**kwargs), self._loop
-        )
+        future = asyncio.run_coroutine_threadsafe(_create_async_transport(**kwargs), self._loop)
         self._async = future.result(timeout=5.0)
 
     def request(self, req: Request) -> Response:
         """Send a request synchronously."""
-        return asyncio.run_coroutine_threadsafe(
-            self._async.request(req), self._loop
-        ).result()
+        return asyncio.run_coroutine_threadsafe(self._async.request(req), self._loop).result()
 
     def close(self) -> None:
         """Close the transport and stop the background event loop."""
@@ -327,11 +319,7 @@ def _raise_for_status(resp: Response, url: str) -> None:
 
     error_type = _ERROR_TYPES.get(resp.status)
     if error_type is None:
-        error_type = (
-            ClientError
-            if resp.status < HTTP_STATUS_INTERNAL_SERVER_ERROR
-            else ServerError
-        )
+        error_type = ClientError if resp.status < HTTP_STATUS_INTERNAL_SERVER_ERROR else ServerError
 
     msg = f"HTTP {resp.status} for {url}"
     raise error_type(

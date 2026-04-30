@@ -34,9 +34,7 @@ def test_get_fetches_live_nyc_311_rows() -> None:
         timings["client_init"] = time.perf_counter() - init_start
 
         get_start = time.perf_counter()
-        rows = client.get(
-            "erm2-nwe9", limit=ROW_LIMIT, select="unique_key,complaint_type"
-        )
+        rows = client.get("erm2-nwe9", limit=ROW_LIMIT, select="unique_key,complaint_type")
         timings["get"] = time.perf_counter() - get_start
     except (NukapyTimeoutError, ConnectError) as exc:
         pytest.skip(f"Network unavailable: {exc}")

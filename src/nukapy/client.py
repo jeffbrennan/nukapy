@@ -128,9 +128,7 @@ class AsyncSocrata:
     async def _request_read(
         self, dataset_id: str, params: Mapping[str, str | int | float]
     ) -> Response:
-        api_version = self._api_version_by_dataset.get(
-            dataset_id, self._config.api_version
-        )
+        api_version = self._api_version_by_dataset.get(dataset_id, self._config.api_version)
         if api_version == "v2.1":
             return await self._request_v21(dataset_id, params)
         if api_version == "v3":
@@ -159,9 +157,7 @@ class AsyncSocrata:
             Request(method="GET", path=_v21_path(dataset_id), params=params)
         )
 
-    def _cache_version_from_headers(
-        self, dataset_id: str, headers: Mapping[str, str]
-    ) -> None:
+    def _cache_version_from_headers(self, dataset_id: str, headers: Mapping[str, str]) -> None:
         version = _api_version_from_headers(headers)
         if version is not None:
             self._api_version_by_dataset[dataset_id] = version
@@ -264,12 +260,8 @@ class Socrata:
         with suppress(Exception):
             self.close()
 
-    def _request_read(
-        self, dataset_id: str, params: Mapping[str, str | int | float]
-    ) -> Response:
-        api_version = self._api_version_by_dataset.get(
-            dataset_id, self._config.api_version
-        )
+    def _request_read(self, dataset_id: str, params: Mapping[str, str | int | float]) -> Response:
+        api_version = self._api_version_by_dataset.get(dataset_id, self._config.api_version)
         if api_version == "v2.1":
             return self._request_v21(dataset_id, params)
         if api_version == "v3":
@@ -284,23 +276,17 @@ class Socrata:
         self._cache_version_from_headers(dataset_id, response.headers)
         return response
 
-    def _request_v3(
-        self, dataset_id: str, params: Mapping[str, str | int | float]
-    ) -> Response:
+    def _request_v3(self, dataset_id: str, params: Mapping[str, str | int | float]) -> Response:
         return self._transport.request(
             Request(method="GET", path=_v3_path(dataset_id), params=params)
         )
 
-    def _request_v21(
-        self, dataset_id: str, params: Mapping[str, str | int | float]
-    ) -> Response:
+    def _request_v21(self, dataset_id: str, params: Mapping[str, str | int | float]) -> Response:
         return self._transport.request(
             Request(method="GET", path=_v21_path(dataset_id), params=params)
         )
 
-    def _cache_version_from_headers(
-        self, dataset_id: str, headers: Mapping[str, str]
-    ) -> None:
+    def _cache_version_from_headers(self, dataset_id: str, headers: Mapping[str, str]) -> None:
         version = _api_version_from_headers(headers)
         if version is not None:
             self._api_version_by_dataset[dataset_id] = version

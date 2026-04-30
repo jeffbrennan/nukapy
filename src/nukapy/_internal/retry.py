@@ -21,15 +21,11 @@ class RetryPolicy:
 
     def delay(self, attempt: int) -> float:
         """Return a full-jitter delay for an attempt number."""
-        upper_bound = min(
-            self.base_delay * (self.backoff_factor**attempt), self.max_delay
-        )
+        upper_bound = min(self.base_delay * (self.backoff_factor**attempt), self.max_delay)
         return random.uniform(0, upper_bound)  # noqa: S311
 
 
-def retry_after_delay(
-    headers: Mapping[str, str], attempt: int, policy: RetryPolicy
-) -> float:
+def retry_after_delay(headers: Mapping[str, str], attempt: int, policy: RetryPolicy) -> float:
     """Return a delay from Retry-After headers, falling back to policy jitter."""
     retry_after = headers.get("retry-after")
     if retry_after is None:
