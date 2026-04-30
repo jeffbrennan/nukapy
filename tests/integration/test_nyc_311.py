@@ -16,9 +16,9 @@ def test_get_fetches_live_nyc_311_rows() -> None:
         pytest.skip("SOCRATA_APP_TOKEN not set")
 
     try:
-        rows = Socrata("data.cityofnewyork.us", app_token=app_token).get(
-            "erm2-nwe9", limit=ROW_LIMIT
-        )
+        rows = Socrata(
+            "data.cityofnewyork.us", app_token=app_token, api_version="v2.1"
+        ).get("erm2-nwe9", limit=ROW_LIMIT)
     except (NukapyTimeoutError, ConnectError) as exc:
         pytest.skip(f"Network unavailable: {exc}")
 

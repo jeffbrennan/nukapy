@@ -4,6 +4,7 @@ import asyncio
 import dataclasses
 import json
 import threading
+import warnings
 from collections.abc import Mapping
 from contextlib import suppress
 from types import TracebackType
@@ -28,12 +29,14 @@ from nukapy.errors import (
     ServerError,
     ServiceUnavailableError,
 )
-from nukapy.errors import (
-    TimeoutError as NukapyTimeoutError,
-)
+from nukapy.errors import TimeoutError as NukapyTimeoutError
 
 HTTP_STATUS_BAD_REQUEST = 400
 HTTP_STATUS_INTERNAL_SERVER_ERROR = 500
+DEFAULT_CONCURRENCY_LIMIT = 8
+DEFAULT_USER_AGENT = "nukapy"
+
+_JSON_UNSET = object()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -41,10 +44,11 @@ class Request:
     """Transport request data."""
 
     method: str
-    url: str
+    path: str
     params: Mapping[str, str | int | float] | None = None
-    headers: Mapping[str, str] | None = None
     body: bytes | None = None
+    headers: Mapping[str, str] | None = None
+    idempotent: bool = True
     timeout: float | None = None
 
 
@@ -52,13 +56,23 @@ class Request:
 class Response:
     """Transport response data."""
 
-    status_code: int
+    status: int
     headers: Mapping[str, str]
     content: bytes
+    _json: object = dataclasses.field(
+        default=_JSON_UNSET, init=False, repr=False, compare=False
+    )
+
+    @property
+    def status_code(self) -> int:
+        """Return the HTTP status code."""
+        return self.status
 
     def json(self) -> Any:  # noqa: ANN401
-        """Decode response content as JSON."""
-        return json.loads(self.content)
+        """Decode response content as JSON once and cache the parsed value."""
+        if self._json is _JSON_UNSET:
+            object.__setattr__(self, "_json", json.loads(self.content))
+        return self._json
 
     def text(self, encoding: str = "utf-8") -> str:
         """Decode response content as text."""
@@ -71,16 +85,36 @@ class AsyncTransport:
     def __init__(  # noqa: PLR0913
         self,
         *,
+        domain: str,
         app_token: str | None = None,
+        api_key: str | None = None,
+        secret: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
         timeout: float = 30.0,
         max_connections: int = 10,
         max_retries: int = 3,
-        concurrency_limit: int = 10,
+        concurrency_limit: int = DEFAULT_CONCURRENCY_LIMIT,
         retry_policy: RetryPolicy | None = None,
+        user_agent: str = DEFAULT_USER_AGENT,
+        base_headers: Mapping[str, str] | None = None,
     ) -> None:
         """Create an async transport."""
+        self._closed = False
+        self._domain = _normalize_domain(domain)
         self._app_token = app_token
+        self._api_key = api_key
+        self._secret = secret
+        self._base_headers = dict(base_headers or {})
+        self._user_agent = user_agent
+        self._auth = _build_auth(
+            username=username,
+            password=password,
+            api_key=api_key,
+            secret=secret,
+        )
         self._client = httpx.AsyncClient(
+            base_url=f"https://{self._domain}",
             limits=httpx.Limits(max_connections=max_connections),
             timeout=httpx.Timeout(timeout),
         )
@@ -100,7 +134,8 @@ class AsyncTransport:
                 try:
                     return await self._send_once(req)
                 except _RETRYABLE_ERRORS as exc:
-                    if attempt >= self._retry_policy.max_attempts - 1:
+                    final_attempt = attempt >= self._retry_policy.max_attempts - 1
+                    if not req.idempotent or final_attempt:
                         raise
                     headers = exc.response_headers if isinstance(exc, HTTPError) else {}
                     delay = retry_after_delay(headers, attempt, self._retry_policy)
@@ -110,41 +145,44 @@ class AsyncTransport:
         raise RuntimeError(msg)
 
     async def _send_once(self, req: Request) -> Response:
-        headers = dict(req.headers or {})
-        if self._app_token:
-            headers["X-App-Token"] = self._app_token
+        headers = self._request_headers(req.headers)
+        url = self._request_url(req.path)
 
         try:
             raw = await self._client.request(
                 req.method,
-                req.url,
+                req.path,
                 params=req.params,
                 headers=headers,
                 content=req.body,
                 timeout=req.timeout,
+                auth=self._auth,
             )
         except httpx.TimeoutException as exc:
-            msg = f"Request timed out for {req.url}"
-            raise NukapyTimeoutError(msg, request_url=req.url) from exc
+            msg = f"Request timed out for {url}"
+            raise NukapyTimeoutError(msg, request_url=url) from exc
         except httpx.ConnectError as exc:
-            msg = f"Connection failed for {req.url}"
-            raise ConnectError(msg, request_url=req.url) from exc
+            msg = f"Connection failed for {url}"
+            raise ConnectError(msg, request_url=url) from exc
         except httpx.NetworkError as exc:
-            msg = f"Network error for {req.url}"
-            raise NetworkError(msg, request_url=req.url) from exc
+            msg = f"Network error for {url}"
+            raise NetworkError(msg, request_url=url) from exc
 
-        headers = dict(raw.headers)
-        self._rate_state.update(headers)
+        response_headers = dict(raw.headers)
+        self._rate_state.update(response_headers)
         response = Response(
-            status_code=raw.status_code,
-            headers=headers,
+            status=raw.status_code,
+            headers=response_headers,
             content=raw.content,
         )
-        _raise_for_status(response, req.url)
+        _raise_for_status(response, str(raw.request.url))
         return response
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client."""
+        if self._closed:
+            return
+        self._closed = True
         await self._client.aclose()
 
     async def __aenter__(self) -> Self:
@@ -159,6 +197,30 @@ class AsyncTransport:
     ) -> None:
         """Exit the async transport context."""
         await self.aclose()
+
+    def __del__(self) -> None:
+        """Warn if the async transport is garbage-collected while open."""
+        if not vars(self).get("_closed", True):
+            warnings.warn(
+                "Unclosed nukapy AsyncTransport; use 'async with' or call aclose().",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
+    def _request_headers(
+        self, request_headers: Mapping[str, str] | None
+    ) -> dict[str, str]:
+        headers = dict(self._base_headers)
+        headers.setdefault("User-Agent", self._user_agent)
+        headers.update(request_headers or {})
+        if self._app_token:
+            headers["X-App-Token"] = self._app_token
+        return headers
+
+    def _request_url(self, path: str) -> str:
+        if path.startswith(("http://", "https://")):
+            return path
+        return f"https://{self._domain}/{path.lstrip('/')}"
 
 
 class Transport:
@@ -209,7 +271,13 @@ class Transport:
         self.close()
 
     def __del__(self) -> None:
-        """Best-effort cleanup for abandoned transports."""
+        """Warn and best-effort close abandoned sync transports."""
+        if not vars(self).get("_closed", True):
+            warnings.warn(
+                "Unclosed nukapy Transport; use 'with' or call close().",
+                ResourceWarning,
+                stacklevel=2,
+            )
         with suppress(Exception):
             self.close()
 
@@ -218,22 +286,47 @@ async def _create_async_transport(**kwargs: Any) -> AsyncTransport:  # noqa: ANN
     return AsyncTransport(**kwargs)
 
 
+def _build_auth(
+    *,
+    username: str | None,
+    password: str | None,
+    api_key: str | None,
+    secret: str | None,
+) -> httpx.Auth | None:
+    if (username is None) != (password is None):
+        msg = "username and password must be provided together"
+        raise ValueError(msg)
+    if (api_key is None) != (secret is None):
+        msg = "api_key and secret must be provided together"
+        raise ValueError(msg)
+
+    if username is not None and password is not None:
+        return httpx.BasicAuth(username, password)
+    if api_key is not None and secret is not None:
+        return httpx.BasicAuth(api_key, secret)
+    return None
+
+
+def _normalize_domain(domain: str) -> str:
+    return domain.removeprefix("https://").removeprefix("http://").rstrip("/")
+
+
 def _raise_for_status(resp: Response, url: str) -> None:
-    if resp.status_code < HTTP_STATUS_BAD_REQUEST:
+    if resp.status < HTTP_STATUS_BAD_REQUEST:
         return
 
-    error_type = _ERROR_TYPES.get(resp.status_code)
+    error_type = _ERROR_TYPES.get(resp.status)
     if error_type is None:
         error_type = (
             ClientError
-            if resp.status_code < HTTP_STATUS_INTERNAL_SERVER_ERROR
+            if resp.status < HTTP_STATUS_INTERNAL_SERVER_ERROR
             else ServerError
         )
 
-    msg = f"HTTP {resp.status_code} for {url}"
+    msg = f"HTTP {resp.status} for {url}"
     raise error_type(
         msg,
-        status_code=resp.status_code,
+        status_code=resp.status,
         request_url=url,
         response_body=resp.text(),
         response_headers=resp.headers,
