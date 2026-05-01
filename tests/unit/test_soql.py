@@ -6,6 +6,9 @@ import math
 import pytest
 
 from nukapy.soql import (
+    BinaryExpression,
+    Function,
+    OrderExpression,
     Query,
     avg,
     col,
@@ -77,6 +80,17 @@ def test_literals_are_escaped() -> None:
 def test_rejects_unsafe_identifiers() -> None:
     with pytest.raises(ValueError, match="identifiers"):
         Query().select(col("bad`name")).to_params()
+
+
+def test_rejects_unsafe_structural_tokens() -> None:
+    with pytest.raises(ValueError, match="function names"):
+        Function("count); SELECT *", ())
+
+    with pytest.raises(ValueError, match="binary operator"):
+        BinaryExpression(col("name"), "= 'Library' OR", col("name"))
+
+    with pytest.raises(ValueError, match="order direction"):
+        OrderExpression(col("name"), "DESC NULLS FIRST")  # type: ignore[arg-type]
 
 
 def test_rejects_invalid_literals() -> None:

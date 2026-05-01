@@ -16,6 +16,11 @@ SoQLParamValue = str | int | float
 LiteralValue = str | int | float | bool | dt.date | dt.datetime
 OrderDirection = TypingLiteral["ASC", "DESC"]
 
+_BINARY_OPERATORS = frozenset({"=", "!=", ">", ">=", "<", "<=", "AND", "OR"})
+_UNARY_OPERATORS = frozenset({"NOT"})
+_POSTFIX_OPERATORS = frozenset({"IS NULL", "IS NOT NULL"})
+_ORDER_DIRECTIONS = frozenset({"ASC", "DESC"})
+
 
 class Expression:
     """Base class for renderable SoQL expressions."""
@@ -143,6 +148,10 @@ class Function(Expression):
     name: str
     args: tuple[Expression, ...]
 
+    def __post_init__(self) -> None:
+        """Validate the function token before rendering."""
+        _validate_function_name(self.name)
+
     def _render(self) -> str:
         rendered_args = ", ".join(arg.render() for arg in self.args)
         return f"{self.name}({rendered_args})"
@@ -156,6 +165,10 @@ class BinaryExpression(Expression):
     operator: str
     right: Expression
 
+    def __post_init__(self) -> None:
+        """Validate the operator token before rendering."""
+        _validate_choice(self.operator, _BINARY_OPERATORS, "binary operator")
+
     def _render(self) -> str:
         return f"({self.left.render()} {self.operator} {self.right.render()})"
 
@@ -167,6 +180,10 @@ class UnaryExpression(Expression):
     operator: str
     expression: Expression
 
+    def __post_init__(self) -> None:
+        """Validate the operator token before rendering."""
+        _validate_choice(self.operator, _UNARY_OPERATORS, "unary operator")
+
     def _render(self) -> str:
         return f"({self.operator} {self.expression.render()})"
 
@@ -177,6 +194,10 @@ class PostfixExpression(Expression):
 
     expression: Expression
     operator: str
+
+    def __post_init__(self) -> None:
+        """Validate the operator token before rendering."""
+        _validate_choice(self.operator, _POSTFIX_OPERATORS, "postfix operator")
 
     def _render(self) -> str:
         return f"({self.expression.render()} {self.operator})"
@@ -230,6 +251,10 @@ class OrderExpression(Expression):
 
     expression: Expression
     direction: OrderDirection
+
+    def __post_init__(self) -> None:
+        """Validate the direction token before rendering."""
+        _validate_choice(self.direction, _ORDER_DIRECTIONS, "order direction")
 
     def _render(self) -> str:
         return f"{self.expression.render()} {self.direction}"
@@ -517,6 +542,28 @@ def _quote_identifier(identifier: str) -> str:
         msg = "SoQL identifiers cannot contain backticks or NUL bytes"
         raise ValueError(msg)
     return f"`{identifier}`"
+
+
+def _validate_function_name(name: str) -> None:
+    if not name:
+        msg = "SoQL function names cannot be empty"
+        raise ValueError(msg)
+    first = name[0]
+    if not (first.isascii() and (first.isalpha() or first == "_")):
+        msg = "SoQL function names must start with an ASCII letter or underscore"
+        raise ValueError(msg)
+    if not all(
+        character.isascii() and (character.isalnum() or character == "_") for character in name
+    ):
+        msg = "SoQL function names can only contain ASCII letters, numbers, and underscores"
+        raise ValueError(msg)
+
+
+def _validate_choice(value: str, allowed_values: frozenset[str], name: str) -> None:
+    if value not in allowed_values:
+        allowed = ", ".join(sorted(allowed_values))
+        msg = f"Invalid SoQL {name}: {value!r}; expected one of {allowed}"
+        raise ValueError(msg)
 
 
 def _render_literal(value: LiteralValue) -> str:
