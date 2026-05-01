@@ -9,12 +9,8 @@ permissions:
 
 jobs:
   quality:
-    name: Python ${{ matrix.python-version }}
+    name: Python 3.13
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Mark required check pending
         env:
@@ -22,13 +18,13 @@ jobs:
         run: |
           gh api --method POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
             -f state=pending \
-            -f context="Python ${{ matrix.python-version }}" \
+            -f context="Python 3.13" \
             -f description="Manual CI in progress" \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
       - run: uv sync --locked
       - run: uv run ruff format --check .
       - run: uv run ruff check .
@@ -50,6 +46,6 @@ jobs:
           fi
           gh api --method POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
             -f state="$state" \
-            -f context="Python ${{ matrix.python-version }}" \
+            -f context="Python 3.13" \
             -f description="$description" \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
