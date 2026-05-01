@@ -1,4 +1,4 @@
 from nukapy._version import __version__
-from nukapy.client import Socrata
+from nukapy.client import AsyncSocrata, Socrata
 
-__all__ = ["Socrata", "__version__"]
+__all__ = ["AsyncSocrata", "Socrata", "__version__"]

@@ -6,7 +6,29 @@ on:
       - "v*"
 
 jobs:
+  compatibility:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --locked
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run pyright
+      - run: uv run pytest -m "not integration"
+      - run: uv run pytest -m integration
+        env:
+          SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
+
   publish:
+    needs: compatibility
     runs-on: ubuntu-latest
     permissions:
       contents: read
