@@ -5,6 +5,7 @@ import pytest
 import respx
 
 from nukapy import AsyncSocrata, Socrata
+from nukapy.soql import Query, col
 
 ROW_LIMIT = 5
 
@@ -71,6 +72,32 @@ def test_get_accepts_select_param() -> None:
         client.get("erm2-nwe9", limit=1, select="unique_key,complaint_type")
 
     assert respx.calls.last.request.url.params["$select"] == "unique_key,complaint_type"
+
+
+@respx.mock
+def test_get_accepts_query_param() -> None:
+    respx.get("https://data.cityofnewyork.us/api/v3/views/erm2-nwe9/query.json").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    query = Query().select(col("unique_key")).where(col("complaint_type") == "Noise").limit(1)
+
+    with Socrata("data.cityofnewyork.us", app_token="test-token") as client:
+        client.get("erm2-nwe9", query=query)
+
+    params = respx.calls.last.request.url.params
+    assert params["$select"] == "`unique_key`"
+    assert params["$where"] == "(`complaint_type` = 'Noise')"
+    assert params["$limit"] == "1"
+
+
+def test_get_rejects_query_with_legacy_params() -> None:
+    query = Query().select(col("unique_key"))
+
+    with (
+        Socrata("data.cityofnewyork.us", app_token="test-token") as client,
+        pytest.raises(ValueError, match="query cannot be combined"),
+    ):
+        client.get("erm2-nwe9", query=query, limit=1)
 
 
 @respx.mock
