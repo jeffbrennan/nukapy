@@ -5,21 +5,71 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import math
-from typing import TYPE_CHECKING, Self
-from typing import Literal as TypingLiteral
+from enum import StrEnum
+from typing import TYPE_CHECKING, Self, TypeAlias, TypeVar, cast
 from urllib.parse import urlencode
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
 SoQLParamValue = str | int | float
 LiteralValue = str | int | float | bool | dt.date | dt.datetime
-OrderDirection = TypingLiteral["ASC", "DESC"]
+_Token = TypeVar("_Token", bound=StrEnum)
 
-_BINARY_OPERATORS = frozenset({"=", "!=", ">", ">=", "<", "<=", "AND", "OR"})
-_UNARY_OPERATORS = frozenset({"NOT"})
-_POSTFIX_OPERATORS = frozenset({"IS NULL", "IS NOT NULL"})
-_ORDER_DIRECTIONS = frozenset({"ASC", "DESC"})
+
+class _BinaryOperator(StrEnum):
+    """Supported binary SoQL operators."""
+
+    EQUAL = "="
+    NOT_EQUAL = "!="
+    GREATER_THAN = ">"
+    GREATER_THAN_OR_EQUAL = ">="
+    LESS_THAN = "<"
+    LESS_THAN_OR_EQUAL = "<="
+    AND = "AND"
+    OR = "OR"
+
+
+class _UnaryOperator(StrEnum):
+    """Supported unary SoQL operators."""
+
+    NOT = "NOT"
+
+
+class _PostfixOperator(StrEnum):
+    """Supported postfix SoQL operators."""
+
+    IS_NULL = "IS NULL"
+    IS_NOT_NULL = "IS NOT NULL"
+
+
+class _OrderDirection(StrEnum):
+    """Supported SoQL order directions."""
+
+    ASC = "ASC"
+    DESC = "DESC"
+
+
+OrderDirection: TypeAlias = str | _OrderDirection
+
+
+class _FunctionName(StrEnum):
+    """Built-in SoQL function names exposed by helper functions."""
+
+    COUNT = "count"
+    SUM = "sum"
+    AVG = "avg"
+    MIN = "min"
+    MAX = "max"
+    UPPER = "upper"
+    LOWER = "lower"
+    STARTS_WITH = "starts_with"
+    DATE_TRUNC_Y = "date_trunc_y"
+    DATE_TRUNC_YM = "date_trunc_ym"
+    DATE_TRUNC_YMD = "date_trunc_ymd"
+    WITHIN_CIRCLE = "within_circle"
+    WITHIN_BOX = "within_box"
+    DISTANCE_IN_METERS = "distance_in_meters"
 
 
 class Expression:
@@ -33,11 +83,11 @@ class Expression:
 
     def asc(self) -> OrderExpression:
         """Return this expression as an ascending ORDER BY term."""
-        return OrderExpression(self, "ASC")
+        return OrderExpression(self, _OrderDirection.ASC)
 
     def desc(self) -> OrderExpression:
         """Return this expression as a descending ORDER BY term."""
-        return OrderExpression(self, "DESC")
+        return OrderExpression(self, _OrderDirection.DESC)
 
     def in_(self, values: Iterable[object]) -> Expression:
         """Return an IN expression for the supplied values."""
@@ -65,11 +115,11 @@ class Expression:
 
     def is_null(self) -> Expression:
         """Return an IS NULL expression."""
-        return PostfixExpression(self, "IS NULL")
+        return PostfixExpression(self, _PostfixOperator.IS_NULL)
 
     def is_not_null(self) -> Expression:
         """Return an IS NOT NULL expression."""
-        return PostfixExpression(self, "IS NOT NULL")
+        return PostfixExpression(self, _PostfixOperator.IS_NOT_NULL)
 
     def render(self) -> str:
         """Render this expression as SoQL."""
@@ -77,39 +127,39 @@ class Expression:
 
     def __eq__(self, other: object) -> BinaryExpression:  # type: ignore[override]
         """Return a SoQL equality comparison."""
-        return BinaryExpression(self, "=", _as_expression(other))
+        return BinaryExpression(self, _BinaryOperator.EQUAL, _as_expression(other))
 
     def __ne__(self, other: object) -> BinaryExpression:  # type: ignore[override]
         """Return a SoQL inequality comparison."""
-        return BinaryExpression(self, "!=", _as_expression(other))
+        return BinaryExpression(self, _BinaryOperator.NOT_EQUAL, _as_expression(other))
 
     def __gt__(self, other: object) -> BinaryExpression:
         """Return a SoQL greater-than comparison."""
-        return BinaryExpression(self, ">", _as_expression(other))
+        return BinaryExpression(self, _BinaryOperator.GREATER_THAN, _as_expression(other))
 
     def __ge__(self, other: object) -> BinaryExpression:
         """Return a SoQL greater-than-or-equal comparison."""
-        return BinaryExpression(self, ">=", _as_expression(other))
+        return BinaryExpression(self, _BinaryOperator.GREATER_THAN_OR_EQUAL, _as_expression(other))
 
     def __lt__(self, other: object) -> BinaryExpression:
         """Return a SoQL less-than comparison."""
-        return BinaryExpression(self, "<", _as_expression(other))
+        return BinaryExpression(self, _BinaryOperator.LESS_THAN, _as_expression(other))
 
     def __le__(self, other: object) -> BinaryExpression:
         """Return a SoQL less-than-or-equal comparison."""
-        return BinaryExpression(self, "<=", _as_expression(other))
+        return BinaryExpression(self, _BinaryOperator.LESS_THAN_OR_EQUAL, _as_expression(other))
 
     def __and__(self, other: object) -> BinaryExpression:
         """Return a SoQL AND expression."""
-        return BinaryExpression(self, "AND", _as_expression(other))
+        return BinaryExpression(self, _BinaryOperator.AND, _as_expression(other))
 
     def __or__(self, other: object) -> BinaryExpression:
         """Return a SoQL OR expression."""
-        return BinaryExpression(self, "OR", _as_expression(other))
+        return BinaryExpression(self, _BinaryOperator.OR, _as_expression(other))
 
     def __invert__(self) -> UnaryExpression:
         """Return a SoQL NOT expression."""
-        return UnaryExpression("NOT", self)
+        return UnaryExpression(_UnaryOperator.NOT, self)
 
     def __bool__(self) -> bool:
         """Reject accidental Python boolean evaluation."""
@@ -162,12 +212,14 @@ class BinaryExpression(Expression):
     """A binary SoQL expression."""
 
     left: Expression
-    operator: str
+    operator: str | _BinaryOperator
     right: Expression
 
     def __post_init__(self) -> None:
         """Validate the operator token before rendering."""
-        _validate_choice(self.operator, _BINARY_OPERATORS, "binary operator")
+        object.__setattr__(
+            self, "operator", _coerce_token(self.operator, _BinaryOperator, "binary operator")
+        )
 
     def _render(self) -> str:
         return f"({self.left.render()} {self.operator} {self.right.render()})"
@@ -177,12 +229,14 @@ class BinaryExpression(Expression):
 class UnaryExpression(Expression):
     """A unary SoQL expression."""
 
-    operator: str
+    operator: str | _UnaryOperator
     expression: Expression
 
     def __post_init__(self) -> None:
         """Validate the operator token before rendering."""
-        _validate_choice(self.operator, _UNARY_OPERATORS, "unary operator")
+        object.__setattr__(
+            self, "operator", _coerce_token(self.operator, _UnaryOperator, "unary operator")
+        )
 
     def _render(self) -> str:
         return f"({self.operator} {self.expression.render()})"
@@ -193,11 +247,13 @@ class PostfixExpression(Expression):
     """A postfix SoQL expression such as IS NULL."""
 
     expression: Expression
-    operator: str
+    operator: str | _PostfixOperator
 
     def __post_init__(self) -> None:
         """Validate the operator token before rendering."""
-        _validate_choice(self.operator, _POSTFIX_OPERATORS, "postfix operator")
+        object.__setattr__(
+            self, "operator", _coerce_token(self.operator, _PostfixOperator, "postfix operator")
+        )
 
     def _render(self) -> str:
         return f"({self.expression.render()} {self.operator})"
@@ -254,7 +310,9 @@ class OrderExpression(Expression):
 
     def __post_init__(self) -> None:
         """Validate the direction token before rendering."""
-        _validate_choice(self.direction, _ORDER_DIRECTIONS, "order direction")
+        object.__setattr__(
+            self, "direction", _coerce_token(self.direction, _OrderDirection, "order direction")
+        )
 
     def _render(self) -> str:
         return f"{self.expression.render()} {self.direction}"
@@ -272,6 +330,16 @@ class RawExpression(Expression):
 
 
 @dataclasses.dataclass(frozen=True)
+class _QueryClause:
+    """Rendered query clause metadata."""
+
+    keyword: str
+    param_name: str | None
+    value: SoQLParamValue
+    include_param: bool = True
+
+
+@dataclasses.dataclass(frozen=True)
 class Query:
     """Immutable fluent SoQL query builder."""
 
@@ -285,19 +353,11 @@ class Query:
 
     def select(self, *expressions: object) -> Self:
         """Return a query with additional SELECT expressions."""
-        return dataclasses.replace(
-            self,
-            select_expressions=self.select_expressions
-            + tuple(_as_expression(expression) for expression in expressions),
-        )
+        return self._append_expressions("select_expressions", expressions, _as_expression)
 
     def where(self, *expressions: object) -> Self:
         """Return a query with additional WHERE expressions joined by AND."""
-        return dataclasses.replace(
-            self,
-            where_expressions=self.where_expressions
-            + tuple(_as_expression(expression) for expression in expressions),
-        )
+        return self._append_expressions("where_expressions", expressions, _as_expression)
 
     def raw_where(self, fragment: str, *params: LiteralValue) -> Self:
         """Return a query with a raw WHERE fragment."""
@@ -305,27 +365,15 @@ class Query:
 
     def group_by(self, *expressions: object) -> Self:
         """Return a query with additional GROUP BY expressions."""
-        return dataclasses.replace(
-            self,
-            group_expressions=self.group_expressions
-            + tuple(_as_expression(expression) for expression in expressions),
-        )
+        return self._append_expressions("group_expressions", expressions, _as_expression)
 
     def having(self, *expressions: object) -> Self:
         """Return a query with additional HAVING expressions joined by AND."""
-        return dataclasses.replace(
-            self,
-            having_expressions=self.having_expressions
-            + tuple(_as_expression(expression) for expression in expressions),
-        )
+        return self._append_expressions("having_expressions", expressions, _as_expression)
 
     def order_by(self, *expressions: object) -> Self:
         """Return a query with additional ORDER BY expressions."""
-        return dataclasses.replace(
-            self,
-            order_expressions=self.order_expressions
-            + tuple(_as_order_expression(expression) for expression in expressions),
-        )
+        return self._append_expressions("order_expressions", expressions, _as_order_expression)
 
     def limit(self, value: int) -> Self:
         """Return a query with a LIMIT value."""
@@ -337,48 +385,22 @@ class Query:
 
     def to_soql(self) -> str:
         """Render this query as a full SoQL statement."""
-        clauses = [f"SELECT {self._render_select_clause()}"]
-        if self.where_expressions:
-            clauses.append(f"WHERE {self._render_joined(self.where_expressions, 'AND')}")
-        if self.group_expressions:
-            clauses.append(f"GROUP BY {self._render_list(self.group_expressions)}")
-        if self.having_expressions:
-            clauses.append(f"HAVING {self._render_joined(self.having_expressions, 'AND')}")
-        if self.order_expressions:
-            clauses.append(f"ORDER BY {self._render_list(self.order_expressions)}")
-        if self.limit_value is not None:
-            clauses.append(f"LIMIT {self.limit_value}")
-        if self.offset_value is not None:
-            clauses.append(f"OFFSET {self.offset_value}")
-        return " ".join(clauses)
+        return " ".join(f"{clause.keyword} {clause.value}" for clause in self._clauses())
 
     def to_params(self) -> dict[str, SoQLParamValue]:
         """Render this query as individual SODA query parameters."""
-        params: dict[str, SoQLParamValue] = {}
-        if self.select_expressions:
-            params["$select"] = self._render_select_clause()
-        if self.where_expressions:
-            params["$where"] = self._render_joined(self.where_expressions, "AND")
-        if self.group_expressions:
-            params["$group"] = self._render_list(self.group_expressions)
-        if self.having_expressions:
-            params["$having"] = self._render_joined(self.having_expressions, "AND")
-        if self.order_expressions:
-            params["$order"] = self._render_list(self.order_expressions)
-        if self.limit_value is not None:
-            params["$limit"] = self.limit_value
-        if self.offset_value is not None:
-            params["$offset"] = self.offset_value
-        return params
+        return {
+            clause.param_name: clause.value
+            for clause in self._clauses()
+            if clause.param_name is not None and clause.include_param
+        }
 
     def to_url(self, domain: str, dataset_id: str) -> str:
         """Render this query as a v2.1 resource URL for debugging."""
         normalized_domain = domain.removeprefix("https://").removeprefix("http://").rstrip("/")
         query_string = urlencode(self.to_params())
         url = f"https://{normalized_domain}/resource/{dataset_id}.json"
-        if query_string:
-            return f"{url}?{query_string}"
-        return url
+        return f"{url}?{query_string}" if query_string else url
 
     def explain(self) -> str:
         """Return a readable description of this query."""
@@ -403,9 +425,53 @@ class Query:
         return ", ".join(expression.render() for expression in expressions)
 
     def _render_joined(self, expressions: Sequence[Expression], operator: str) -> str:
-        if len(expressions) == 1:
-            return expressions[0].render()
         return f" {operator} ".join(expression.render() for expression in expressions)
+
+    def _append_expressions(
+        self,
+        field_name: str,
+        expressions: tuple[object, ...],
+        converter: Callable[[object], Expression],
+    ) -> Self:
+        current_expressions = cast("tuple[Expression, ...]", getattr(self, field_name))
+        next_expressions = current_expressions + tuple(
+            converter(expression) for expression in expressions
+        )
+        return dataclasses.replace(self, **{field_name: next_expressions})
+
+    def _clauses(self) -> list[_QueryClause]:
+        clauses = [
+            _QueryClause(
+                "SELECT",
+                "$select",
+                self._render_select_clause(),
+                include_param=bool(self.select_expressions),
+            )
+        ]
+
+        expression_clause_specs = (
+            ("WHERE", "$where", self.where_expressions, "AND"),
+            ("GROUP BY", "$group", self.group_expressions, None),
+            ("HAVING", "$having", self.having_expressions, "AND"),
+            ("ORDER BY", "$order", self.order_expressions, None),
+        )
+        for keyword, param_name, expressions, join_operator in expression_clause_specs:
+            if not expressions:
+                continue
+            value = (
+                self._render_list(expressions)
+                if join_operator is None
+                else self._render_joined(expressions, join_operator)
+            )
+            clauses.append(_QueryClause(keyword, param_name, value))
+
+        for keyword, param_name, value in (
+            ("LIMIT", "$limit", self.limit_value),
+            ("OFFSET", "$offset", self.offset_value),
+        ):
+            if value is not None:
+                clauses.append(_QueryClause(keyword, param_name, value))
+        return clauses
 
     def _warnings(self) -> list[str]:
         warnings: list[str] = []
@@ -423,64 +489,64 @@ def col(name: str) -> Column:
 
 def count(expression: object = RawExpression("*")) -> Function:
     """Return a count aggregate expression."""
-    return _function("count", expression)
+    return _function(_FunctionName.COUNT, expression)
 
 
 def sum_(expression: object) -> Function:
     """Return a sum aggregate expression."""
-    return _function("sum", expression)
+    return _function(_FunctionName.SUM, expression)
 
 
 def avg(expression: object) -> Function:
     """Return an average aggregate expression."""
-    return _function("avg", expression)
+    return _function(_FunctionName.AVG, expression)
 
 
 def min_(expression: object) -> Function:
     """Return a minimum aggregate expression."""
-    return _function("min", expression)
+    return _function(_FunctionName.MIN, expression)
 
 
 def max_(expression: object) -> Function:
     """Return a maximum aggregate expression."""
-    return _function("max", expression)
+    return _function(_FunctionName.MAX, expression)
 
 
 def upper(expression: object) -> Function:
     """Return an uppercase string expression."""
-    return _function("upper", expression)
+    return _function(_FunctionName.UPPER, expression)
 
 
 def lower(expression: object) -> Function:
     """Return a lowercase string expression."""
-    return _function("lower", expression)
+    return _function(_FunctionName.LOWER, expression)
 
 
 def starts_with(expression: object, prefix: object) -> Function:
     """Return a prefix-match string expression."""
-    return _function("starts_with", expression, prefix)
+    return _function(_FunctionName.STARTS_WITH, expression, prefix)
 
 
 def date_trunc_y(expression: object) -> Function:
     """Return a year-truncated date expression."""
-    return _function("date_trunc_y", expression)
+    return _function(_FunctionName.DATE_TRUNC_Y, expression)
 
 
 def date_trunc_ym(expression: object) -> Function:
     """Return a year-month-truncated date expression."""
-    return _function("date_trunc_ym", expression)
+    return _function(_FunctionName.DATE_TRUNC_YM, expression)
 
 
 def date_trunc_ymd(expression: object) -> Function:
     """Return a year-month-day-truncated date expression."""
-    return _function("date_trunc_ymd", expression)
+    return _function(_FunctionName.DATE_TRUNC_YMD, expression)
 
 
 def within_circle(
     location: object, latitude: float, longitude: float, radius_meters: float
 ) -> Function:
     """Return a circular geospatial predicate."""
-    return _function("within_circle", location, latitude, longitude, radius_meters)
+    return _function(_FunctionName.WITHIN_CIRCLE, location, latitude, longitude, radius_meters)
 
 
 def within_box(
@@ -492,7 +558,7 @@ def within_box(
 ) -> Function:
     """Return a bounding-box geospatial predicate."""
     return _function(
-        "within_box",
+        _FunctionName.WITHIN_BOX,
         location,
         northwest_latitude,
         northwest_longitude,
@@ -503,7 +569,7 @@ def within_box(
 
 def distance_in_meters(first_point: object, second_point: object) -> Function:
     """Return a point distance geospatial expression."""
-    return _function("distance_in_meters", first_point, second_point)
+    return _function(_FunctionName.DISTANCE_IN_METERS, first_point, second_point)
 
 
 def raw(fragment: str, *params: LiteralValue) -> RawExpression:
@@ -511,7 +577,7 @@ def raw(fragment: str, *params: LiteralValue) -> RawExpression:
     return RawExpression(fragment, params)
 
 
-def _function(name: str, *args: object) -> Function:
+def _function(name: str | _FunctionName, *args: object) -> Function:
     return Function(name, tuple(_as_expression(arg) for arg in args))
 
 
@@ -559,11 +625,13 @@ def _validate_function_name(name: str) -> None:
         raise ValueError(msg)
 
 
-def _validate_choice(value: str, allowed_values: frozenset[str], name: str) -> None:
-    if value not in allowed_values:
-        allowed = ", ".join(sorted(allowed_values))
+def _coerce_token(value: str, enum_type: type[_Token], name: str) -> _Token:
+    try:
+        return enum_type(value)
+    except ValueError as error:
+        allowed = ", ".join(sorted(member.value for member in enum_type))
         msg = f"Invalid SoQL {name}: {value!r}; expected one of {allowed}"
-        raise ValueError(msg)
+        raise ValueError(msg) from error
 
 
 def _render_literal(value: LiteralValue) -> str:
@@ -617,27 +685,23 @@ def _contains_raw_expression(expressions: Iterable[Expression]) -> bool:
 
 
 def _is_raw_expression(expression: Expression) -> bool:
-    result = False
     if isinstance(expression, RawExpression):
-        result = True
-    elif isinstance(expression, BinaryExpression):
-        result = _is_raw_expression(expression.left) or _is_raw_expression(expression.right)
-    elif isinstance(expression, UnaryExpression | PostfixExpression):
-        result = _is_raw_expression(expression.expression)
+        return True
+
+    child_expressions: tuple[Expression, ...] = ()
+    if isinstance(expression, BinaryExpression):
+        child_expressions = (expression.left, expression.right)
+    elif isinstance(
+        expression, UnaryExpression | PostfixExpression | AliasedExpression | OrderExpression
+    ):
+        child_expressions = (expression.expression,)
     elif isinstance(expression, InExpression):
-        result = _is_raw_expression(expression.expression) or any(
-            _is_raw_expression(value) for value in expression.values
-        )
+        child_expressions = (expression.expression, *expression.values)
     elif isinstance(expression, BetweenExpression):
-        result = any(
-            _is_raw_expression(value)
-            for value in (expression.expression, expression.lower, expression.upper)
-        )
-    elif isinstance(expression, AliasedExpression | OrderExpression):
-        result = _is_raw_expression(expression.expression)
+        child_expressions = (expression.expression, expression.lower, expression.upper)
     elif isinstance(expression, Function):
-        result = any(_is_raw_expression(arg) for arg in expression.args)
-    return result
+        child_expressions = expression.args
+    return any(_is_raw_expression(child_expression) for child_expression in child_expressions)
 
 
 __all__ = [

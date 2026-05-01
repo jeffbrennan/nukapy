@@ -9,7 +9,9 @@ from nukapy.soql import (
     BinaryExpression,
     Function,
     OrderExpression,
+    PostfixExpression,
     Query,
+    UnaryExpression,
     avg,
     col,
     count,
@@ -82,6 +84,16 @@ def test_rejects_unsafe_identifiers() -> None:
         Query().select(col("bad`name")).to_params()
 
 
+def test_direct_expression_constructors_accept_valid_tokens() -> None:
+    assert Function("custom_function", (col("name"),)).render() == "custom_function(`name`)"
+    assert BinaryExpression(col("name"), "=", col("other_name")).render() == (
+        "(`name` = `other_name`)"
+    )
+    assert UnaryExpression("NOT", col("name").is_null()).render() == "(NOT (`name` IS NULL))"
+    assert PostfixExpression(col("name"), "IS NOT NULL").render() == "(`name` IS NOT NULL)"
+    assert OrderExpression(col("name"), "DESC").render() == "`name` DESC"
+
+
 def test_rejects_unsafe_structural_tokens() -> None:
     with pytest.raises(ValueError, match="function names"):
         Function("count); SELECT *", ())
@@ -89,8 +101,14 @@ def test_rejects_unsafe_structural_tokens() -> None:
     with pytest.raises(ValueError, match="binary operator"):
         BinaryExpression(col("name"), "= 'Library' OR", col("name"))
 
+    with pytest.raises(ValueError, match="unary operator"):
+        UnaryExpression("NOT EXISTS", col("name"))
+
+    with pytest.raises(ValueError, match="postfix operator"):
+        PostfixExpression(col("name"), "IS NOT NULL OR")
+
     with pytest.raises(ValueError, match="order direction"):
-        OrderExpression(col("name"), "DESC NULLS FIRST")  # type: ignore[arg-type]
+        OrderExpression(col("name"), "DESC NULLS FIRST")
 
 
 def test_rejects_invalid_literals() -> None:
