@@ -98,6 +98,24 @@ def test_sync_iter_batches_yields_arrow_batches_and_does_not_prefetch() -> None:
 
 
 @respx.mock
+async def test_async_stream_does_not_prefetch() -> None:
+    route = respx.get(TEST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json={"data": [{":id": 1, "name": "one"}]}),
+        ]
+    )
+
+    async with AsyncSocrata("data.cityofnewyork.us", app_token="test-token") as client:
+        stream = client.dataset("erm2-nwe9").stream(batch_size=BATCH_SIZE)
+        assert route.call_count == 0
+
+        batch = await anext(stream)
+
+    assert isinstance(batch, pa.RecordBatch)
+    assert route.call_count == 1
+
+
+@respx.mock
 async def test_async_stream_yields_arrow_batches() -> None:
     respx.get(TEST_URL).mock(
         side_effect=[
@@ -158,7 +176,7 @@ def test_iterator_uses_next_id_checkpoint() -> None:
 
     assert first.num_rows == BATCH_SIZE
     assert second.num_rows == 1
-    assert route.call_count == BATCH_SIZE
+    assert route.call_count == 2  # noqa: PLR2004
     first_call = cast("Any", respx.calls[0])
     second_call = cast("Any", respx.calls[1])
     first_request = cast("httpx.Request", first_call.request)

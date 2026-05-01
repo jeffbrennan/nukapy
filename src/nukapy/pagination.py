@@ -14,10 +14,9 @@ Params = dict[str, SoQLParamValue]
 
 @dataclasses.dataclass(frozen=True)
 class PageRequest:
-    """One Socrata page request and its checkpoint basis."""
+    """One Socrata page request."""
 
     params: Params
-    state: dict[str, object]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -62,7 +61,6 @@ class Paginator:
         if self._config.strategy == "offset":
             offset = _int_state(self._state, "offset", 0)
             params["$offset"] = offset
-            state = {**self._state, "offset": offset}
         elif self._config.strategy == "updated_at":
             updated_at = _str_state(self._state, "updated_at", "")
             last_id = _int_state(self._state, "id", 0)
@@ -72,15 +70,13 @@ class Paginator:
                 _updated_at_where(updated_at, last_id),
             )
             params["$order"] = ":updated_at, :id"
-            state = {**self._state, "updated_at": updated_at, "id": last_id}
         else:
             last_id = _int_state(self._state, "id", 0)
             params["$select"] = _with_system_select(params.get("$select"), (":id",))
             params["$where"] = _and_where(params.get("$where"), f":id > {last_id}")
             params["$order"] = ":id"
-            state = {**self._state, "id": last_id}
 
-        return PageRequest(params=params, state=state)
+        return PageRequest(params=params)
 
     def advance(self, rows: Sequence[Mapping[str, object]]) -> None:
         """Advance the checkpoint after a non-empty page."""
