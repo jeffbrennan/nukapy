@@ -2,13 +2,17 @@
 
 import dataclasses
 import warnings
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from contextlib import suppress
 from types import TracebackType
 from typing import Any, Literal, Self, cast
 
+import pyarrow as pa
+
 from nukapy._internal.auth import get_app_token
 from nukapy.errors import BadRequestError, NotFoundError
+from nukapy.pagination import DEFAULT_BATCH_SIZE, PaginationConfig, PaginationStrategy, Paginator
+from nukapy.results import NukapyResult
 from nukapy.soql import Query
 from nukapy.transport import AsyncTransport, Request, Response, Transport
 
@@ -95,8 +99,12 @@ class AsyncSocrata:
     ) -> list[dict[str, Any]]:
         """Fetch rows from a Socrata dataset."""
         params = _row_params(limit=limit, select=select, query=query)
-        response = await self._request_read(dataset_id, params)
+        response = await self.request_read(dataset_id, params)
         return _rows_from_response(response)
+
+    def dataset(self, dataset_id: str) -> "AsyncDataset":
+        """Return an async handle for iterating over a Socrata dataset."""
+        return AsyncDataset(self, dataset_id)
 
     async def aclose(self) -> None:
         """Close the underlying transport."""
@@ -127,9 +135,10 @@ class AsyncSocrata:
                 stacklevel=2,
             )
 
-    async def _request_read(
+    async def request_read(
         self, dataset_id: str, params: Mapping[str, str | int | float]
     ) -> Response:
+        """Request rows from a dataset and return the raw transport response."""
         api_version = self._api_version_by_dataset.get(dataset_id, self._config.api_version)
         if api_version == "v2.1":
             return await self._request_v21(dataset_id, params)
@@ -229,8 +238,12 @@ class Socrata:
     ) -> list[dict[str, Any]]:
         """Fetch rows from a Socrata dataset."""
         params = _row_params(limit=limit, select=select, query=query)
-        response = self._request_read(dataset_id, params)
+        response = self.request_read(dataset_id, params)
         return _rows_from_response(response)
+
+    def dataset(self, dataset_id: str) -> "Dataset":
+        """Return a sync handle for iterating over a Socrata dataset."""
+        return Dataset(self, dataset_id)
 
     def close(self) -> None:
         """Close the underlying transport."""
@@ -263,7 +276,8 @@ class Socrata:
         with suppress(Exception):
             self.close()
 
-    def _request_read(self, dataset_id: str, params: Mapping[str, str | int | float]) -> Response:
+    def request_read(self, dataset_id: str, params: Mapping[str, str | int | float]) -> Response:
+        """Request rows from a dataset and return the raw transport response."""
         api_version = self._api_version_by_dataset.get(dataset_id, self._config.api_version)
         if api_version == "v2.1":
             return self._request_v21(dataset_id, params)
@@ -293,6 +307,184 @@ class Socrata:
         version = _api_version_from_headers(headers)
         if version is not None:
             self._api_version_by_dataset[dataset_id] = version
+
+
+@dataclasses.dataclass(frozen=True)
+class AsyncDataset:
+    """Async dataset handle."""
+
+    _client: AsyncSocrata
+    dataset_id: str
+
+    def stream(
+        self,
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        strategy: PaginationStrategy = "id",
+        query: Query | None = None,
+        state: Mapping[str, object] | None = None,
+    ) -> "AsyncBatchStream":
+        """Stream Arrow record batches without buffering ahead."""
+        return AsyncBatchStream(
+            self._client,
+            self.dataset_id,
+            PaginationConfig(
+                batch_size=batch_size,
+                strategy=strategy,
+                query=query,
+                state=state,
+            ),
+        )
+
+    async def fetch(
+        self,
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        strategy: PaginationStrategy = "id",
+        query: Query | None = None,
+        state: Mapping[str, object] | None = None,
+    ) -> NukapyResult:
+        """Eagerly fetch all streamed batches into memory."""
+        stream = self.stream(
+            batch_size=batch_size,
+            strategy=strategy,
+            query=query,
+            state=state,
+        )
+        batches = [batch async for batch in stream]
+        return NukapyResult(batches=tuple(batches), checkpoint=stream.checkpoint)
+
+
+class AsyncBatchStream(AsyncIterator[pa.RecordBatch]):
+    """Async iterator over Arrow record batches."""
+
+    def __init__(
+        self,
+        client: AsyncSocrata,
+        dataset_id: str,
+        config: PaginationConfig,
+    ) -> None:
+        """Create an async batch stream."""
+        self._client = client
+        self._dataset_id = dataset_id
+        self._config = config
+        self._paginator = Paginator(config)
+        self._done = False
+
+    @property
+    def checkpoint(self) -> dict[str, object]:
+        """Return the latest pagination checkpoint."""
+        return self._paginator.checkpoint
+
+    def __aiter__(self) -> Self:
+        """Return this stream as its async iterator."""
+        return self
+
+    async def __anext__(self) -> pa.RecordBatch:
+        """Fetch and return the next Arrow record batch."""
+        if self._done:
+            raise StopAsyncIteration
+
+        request = self._paginator.next_request()
+        response = await self._client.request_read(self._dataset_id, request.params)
+        rows = _rows_from_response(response)
+        if not rows:
+            self._done = True
+            raise StopAsyncIteration
+
+        self._paginator.advance(rows)
+        if len(rows) < self._config.batch_size:
+            self._done = True
+        return _record_batch_from_rows(rows)
+
+
+@dataclasses.dataclass(frozen=True)
+class Dataset:
+    """Sync dataset handle."""
+
+    _client: Socrata
+    dataset_id: str
+
+    def iter_batches(
+        self,
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        strategy: PaginationStrategy = "id",
+        query: Query | None = None,
+        state: Mapping[str, object] | None = None,
+    ) -> "BatchIterator":
+        """Iterate Arrow record batches without buffering ahead."""
+        return BatchIterator(
+            self._client,
+            self.dataset_id,
+            PaginationConfig(
+                batch_size=batch_size,
+                strategy=strategy,
+                query=query,
+                state=state,
+            ),
+        )
+
+    def fetch(
+        self,
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        strategy: PaginationStrategy = "id",
+        query: Query | None = None,
+        state: Mapping[str, object] | None = None,
+    ) -> NukapyResult:
+        """Eagerly fetch all streamed batches into memory."""
+        iterator = self.iter_batches(
+            batch_size=batch_size,
+            strategy=strategy,
+            query=query,
+            state=state,
+        )
+        batches = tuple(iterator)
+        return NukapyResult(batches=batches, checkpoint=iterator.checkpoint)
+
+
+class BatchIterator(Iterator[pa.RecordBatch]):
+    """Sync iterator over Arrow record batches."""
+
+    def __init__(
+        self,
+        client: Socrata,
+        dataset_id: str,
+        config: PaginationConfig,
+    ) -> None:
+        """Create a sync batch iterator."""
+        self._client = client
+        self._dataset_id = dataset_id
+        self._config = config
+        self._paginator = Paginator(config)
+        self._done = False
+
+    @property
+    def checkpoint(self) -> dict[str, object]:
+        """Return the latest pagination checkpoint."""
+        return self._paginator.checkpoint
+
+    def __iter__(self) -> Self:
+        """Return this stream as its iterator."""
+        return self
+
+    def __next__(self) -> pa.RecordBatch:
+        """Fetch and return the next Arrow record batch."""
+        if self._done:
+            raise StopIteration
+
+        request = self._paginator.next_request()
+        response = self._client.request_read(self._dataset_id, request.params)
+        rows = _rows_from_response(response)
+        if not rows:
+            self._done = True
+            raise StopIteration
+
+        self._paginator.advance(rows)
+        if len(rows) < self._config.batch_size:
+            self._done = True
+        return _record_batch_from_rows(rows)
 
 
 def _build_config(  # noqa: PLR0913
@@ -353,6 +545,10 @@ def _rows_from_response(response: Response) -> list[dict[str, Any]]:
     return cast("list[dict[str, Any]]", data)
 
 
+def _record_batch_from_rows(rows: list[dict[str, Any]]) -> pa.RecordBatch:
+    return pa.RecordBatch.from_pylist(rows)
+
+
 def _api_version_from_headers(headers: Mapping[str, str]) -> ApiVersion | None:
     version = headers.get("x-socrata-api-version", "").lower()
     if version.startswith("3") or "v3" in version:
@@ -370,4 +566,11 @@ def _v21_path(dataset_id: str) -> str:
     return f"/resource/{dataset_id}.json"
 
 
-__all__ = ["AsyncSocrata", "Socrata"]
+__all__ = [
+    "AsyncBatchStream",
+    "AsyncDataset",
+    "AsyncSocrata",
+    "BatchIterator",
+    "Dataset",
+    "Socrata",
+]
