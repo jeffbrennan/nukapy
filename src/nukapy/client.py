@@ -9,6 +9,7 @@ from typing import Any, Literal, Self, cast
 
 from nukapy._internal.auth import get_app_token
 from nukapy.errors import BadRequestError, NotFoundError
+from nukapy.soql import Query
 from nukapy.transport import AsyncTransport, Request, Response, Transport
 
 ApiVersion = Literal["auto", "v3", "v2.1"]
@@ -90,9 +91,10 @@ class AsyncSocrata:
         *,
         limit: int | None = None,
         select: str | None = None,
+        query: Query | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch rows from a Socrata dataset."""
-        params = _row_params(limit=limit, select=select)
+        params = _row_params(limit=limit, select=select, query=query)
         response = await self._request_read(dataset_id, params)
         return _rows_from_response(response)
 
@@ -223,9 +225,10 @@ class Socrata:
         *,
         limit: int | None = None,
         select: str | None = None,
+        query: Query | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch rows from a Socrata dataset."""
-        params = _row_params(limit=limit, select=select)
+        params = _row_params(limit=limit, select=select, query=query)
         response = self._request_read(dataset_id, params)
         return _rows_from_response(response)
 
@@ -323,8 +326,16 @@ def _build_config(  # noqa: PLR0913
     )
 
 
-def _row_params(*, limit: int | None, select: str | None) -> dict[str, str | int]:
-    params: dict[str, str | int] = {}
+def _row_params(
+    *, limit: int | None, select: str | None, query: Query | None
+) -> dict[str, str | int | float]:
+    if query is not None:
+        if select is not None or limit is not None:
+            msg = "query cannot be combined with select or limit"
+            raise ValueError(msg)
+        return query.to_params()
+
+    params: dict[str, str | int | float] = {}
     if select is not None:
         params["$select"] = select
     if limit is not None:
