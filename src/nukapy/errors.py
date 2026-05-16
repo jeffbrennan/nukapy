@@ -25,7 +25,7 @@ class ConnectError(TransportError):
     """Connection establishment failed."""
 
 
-class TimeoutError(TransportError):  # noqa: A001
+class TimeoutError(TransportError):
     """Request timed out."""
 
 
