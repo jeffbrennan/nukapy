@@ -38,7 +38,7 @@ class _ClientConfig:
 class AsyncSocrata:
     """Async client for the Socrata Open Data API."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         domain: str,
         app_token: str | None = None,
@@ -177,7 +177,7 @@ class AsyncSocrata:
 class Socrata:
     """Sync client for the Socrata Open Data API."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         domain: str,
         app_token: str | None = None,
@@ -487,7 +487,7 @@ class BatchIterator(Iterator[pa.RecordBatch]):
         return _record_batch_from_rows(rows)
 
 
-def _build_config(  # noqa: PLR0913
+def _build_config(
     *,
     domain: str,
     app_token: str | None,

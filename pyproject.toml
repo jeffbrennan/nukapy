@@ -61,17 +61,32 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
+  "A001",    # class name shadows a Python builtin (e.g. TimeoutError)
+  "A004",    # import shadows a Python builtin (e.g. TimeoutError)
   "COM812",
   "D100",
-  "D203",
   "D104",
+  "D105",    # missing docstring in magic method
+  "D107",    # missing docstring in __init__
+  "D203",
   "D213",
+  "PLR0913", # too many arguments in function definition
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "benchmarks/**/*.py" = ["INP001"]
 "examples/**/*.py" = ["INP001", "T201"]
-"tests/**/*.py" = ["D103", "INP001", "S101", "S106"]
+"tests/**/*.py" = [
+  "ARG001",  # unused function argument (common in mock handlers)
+  "D103",
+  "FURB110", # ternary vs or (readability preference in tests)
+  "INP001",
+  "PLR2004", # magic value comparisons (common in assertions)
+  "S101",
+  "S106",
+  "SIM117",  # nested with statements (clearer context in tests)
+  "SLF001",  # private member access (needed to inspect internals)
+]
 
 [tool.pyright]
 include = ["src", "tests", "benchmarks", "examples"]

@@ -80,7 +80,7 @@ class Response:
 class AsyncTransport:
     """Async HTTP transport with pooling, retries, and error mapping."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         *,
         domain: str,

@@ -12,6 +12,7 @@ import httpx
 import pytest
 import respx
 
+from nukapy._internal.rate_limit import RateLimitState
 from nukapy._internal.retry import RetryPolicy, retry_after_delay
 from nukapy.errors import (
     AuthenticationError,
@@ -23,6 +24,15 @@ from nukapy.errors import (
     NotFoundError,
     RateLimitError,
     ServiceUnavailableError,
+)
+from nukapy.errors import (
+    ConnectError as NukapyConnectError,
+)
+from nukapy.errors import (
+    NetworkError as NukapyNetworkError,
+)
+from nukapy.errors import (
+    TimeoutError as NukapyTimeout,
 )
 from nukapy.transport import AsyncTransport, Request, Response, Transport
 
@@ -385,3 +395,90 @@ def test_retry_after_http_date_and_fallback() -> None:
 
     assert 0.0 <= retry_after_delay(headers, 0, policy) <= HEADER_MAX_DELAY
     assert 0.0 <= retry_after_delay({"retry-after": "not-a-date"}, 0, policy) <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# httpx-layer exception mapping (not covered by status-code tests above)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_timeout_exception_maps_to_nukapy_timeout() -> None:
+    respx.get(TEST_URL).mock(side_effect=httpx.TimeoutException("timed out"))
+    async with AsyncTransport(domain="example.test", max_retries=1) as t:
+        with pytest.raises(NukapyTimeout):
+            await t.request(Request(method="GET", path=TEST_PATH))
+
+
+@respx.mock
+async def test_connect_error_maps_to_nukapy_connect_error() -> None:
+    respx.get(TEST_URL).mock(side_effect=httpx.ConnectError("refused"))
+    async with AsyncTransport(domain="example.test", max_retries=1) as t:
+        with pytest.raises(NukapyConnectError):
+            await t.request(Request(method="GET", path=TEST_PATH))
+
+
+@respx.mock
+async def test_network_error_maps_to_nukapy_network_error() -> None:
+    respx.get(TEST_URL).mock(side_effect=httpx.NetworkError("broken pipe"))
+    async with AsyncTransport(domain="example.test", max_retries=1) as t:
+        with pytest.raises(NukapyNetworkError):
+            await t.request(Request(method="GET", path=TEST_PATH))
+
+
+# ---------------------------------------------------------------------------
+# Retry on transport-layer errors (timeout / connect)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_retries_on_timeout_then_succeeds() -> None:
+    call_count = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            raise httpx.TimeoutException("timed out")  # noqa: TRY003, EM101
+        return httpx.Response(200, json={"ok": True})
+
+    respx.get(TEST_URL).mock(side_effect=handler)
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        async with AsyncTransport(domain="example.test", max_retries=3) as t:
+            resp = await t.request(Request(method="GET", path=TEST_PATH))
+    assert resp.status_code == 200
+    assert call_count == 2
+
+
+@respx.mock
+async def test_raises_timeout_after_max_retries() -> None:
+    respx.get(TEST_URL).mock(side_effect=httpx.TimeoutException("timed out"))
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        async with AsyncTransport(domain="example.test", max_retries=2) as t:
+            with pytest.raises(NukapyTimeout):
+                await t.request(Request(method="GET", path=TEST_PATH))
+
+
+# ---------------------------------------------------------------------------
+# RateLimitState helper methods
+# ---------------------------------------------------------------------------
+
+
+def test_rate_limit_is_exhausted_false_when_remaining_nonzero() -> None:
+    state = RateLimitState(remaining=10)
+    assert state.is_exhausted() is False
+
+
+def test_rate_limit_is_exhausted_true_when_zero_and_future_reset() -> None:
+    future = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=60)
+    state = RateLimitState(remaining=0, reset_at=future)
+    assert state.is_exhausted() is True
+
+
+def test_rate_limit_seconds_until_reset_zero_when_no_reset() -> None:
+    assert RateLimitState().seconds_until_reset() == 0.0
+
+
+def test_rate_limit_seconds_until_reset_positive_for_future() -> None:
+    future = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=30)
+    assert RateLimitState(reset_at=future).seconds_until_reset() > 0.0
