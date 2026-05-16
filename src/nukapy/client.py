@@ -5,7 +5,10 @@ import warnings
 from collections.abc import AsyncIterator, Iterator, Mapping
 from contextlib import suppress
 from types import TracebackType
-from typing import Any, Literal, Self, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
+
+if TYPE_CHECKING:
+    from nukapy.models import DatasetMeta
 
 import pyarrow as pa
 
@@ -88,6 +91,15 @@ class AsyncSocrata:
             base_headers=self._config.base_headers,
             concurrency_limit=self._config.concurrency_limit,
         )
+
+    async def metadata(self, dataset_id: str) -> "DatasetMeta":
+        """Fetch metadata for a dataset."""
+        from nukapy.models import DatasetMeta  # noqa: PLC0415
+
+        response = await self._transport.request(
+            Request(method="GET", path=f"/api/views/{dataset_id}.json", params={})
+        )
+        return DatasetMeta.model_validate(response.json())
 
     async def get(
         self,
@@ -227,6 +239,15 @@ class Socrata:
             base_headers=self._config.base_headers,
             concurrency_limit=self._config.concurrency_limit,
         )
+
+    def metadata(self, dataset_id: str) -> "DatasetMeta":
+        """Fetch metadata for a dataset."""
+        from nukapy.models import DatasetMeta  # noqa: PLC0415
+
+        response = self._transport.request(
+            Request(method="GET", path=f"/api/views/{dataset_id}.json", params={})
+        )
+        return DatasetMeta.model_validate(response.json())
 
     def get(
         self,
