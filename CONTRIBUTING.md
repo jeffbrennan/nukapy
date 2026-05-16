@@ -15,5 +15,5 @@ just quality
 
 - `uv` manages dependencies and command execution.
 - `ruff` handles formatting and linting.
-- `pyright` handles type checking.
+- `pyrefly` handles type checking.
 - `pytest` handles tests.

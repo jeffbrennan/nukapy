@@ -42,7 +42,7 @@ nukapy = "nukapy.cli:app"
 
 [dependency-groups]
 dev = [
-  "pyright>=1.1.400",
+  "pyrefly>=0.17.0",
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
   "pytest-cov>=7.1.0",
@@ -88,10 +88,9 @@ ignore = [
   "SLF001",  # private member access (needed to inspect internals)
 ]
 
-[tool.pyright]
-include = ["src", "tests", "benchmarks", "examples"]
-pythonVersion = "3.11"
-typeCheckingMode = "strict"
+[tool.pyrefly]
+source_paths = ["src", "tests", "benchmarks", "examples"]
+python_version = "3.11"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

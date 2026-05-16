@@ -5,7 +5,7 @@
 .python-version
 .ruff_cache/
 .pytest_cache/
-.pyright/
+.pyrefly/
 .coverage
 htmlcov/
 dist/
