@@ -89,7 +89,7 @@ ignore = [
 ]
 
 [tool.pyrefly]
-source_paths = ["src", "tests", "benchmarks", "examples"]
+project_includes = ["src", "tests", "benchmarks", "examples"]
 python_version = "3.11"
 
 [tool.pytest.ini_options]
