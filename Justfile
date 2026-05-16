@@ -6,7 +6,7 @@ lint:
 	uv run ruff check .
 
 typecheck:
-	uv run pyright
+	uv run pyrefly check
 
 test:
 	uv run pytest -m "not integration"

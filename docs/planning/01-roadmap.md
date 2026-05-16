@@ -12,7 +12,7 @@ data.cdc.gov, data.cityofchicago.org, healthdata.gov, and hundreds more).
 The core value proposition is:
 
 - **Typed**: Pydantic v2 models for metadata, a typed SoQL query builder,
-  pyright strict throughout
+  pyrefly strict throughout
 - **Async-first**: httpx-based, with bounded-memory iteration over multi-million
   row datasets
 - **Arrow-native**: Polars and Arrow are first-class outputs; pandas is optional
@@ -42,7 +42,7 @@ later; none is on the v1 critical path.
 A package that installs, imports, and successfully fetches five rows from NYC
 311. Proves the toolchain end-to-end. Most of the code is throwaway.
 
-- Project scaffolding (uv, hatchling, ruff, pyright, pytest, GHA)
+- Project scaffolding (uv, hatchling, ruff, pyrefly, pytest, GHA)
 - Hello-world sync client: `Socrata(domain).get(dataset_id, limit=5)`
 - One live integration test, one cassette-replay unit test
 - CI green on Python 3.11, 3.12, 3.13
@@ -105,7 +105,7 @@ A concrete checklist. v0.1 ships when all are true.
 
 - [ ] Published to PyPI as `nukapy==0.1.0`
 - [ ] `pip install nukapy` works on Python 3.11, 3.12, 3.13
-- [ ] Pyright strict mode passes with zero errors
+- [ ] Pyrefly passes with zero errors
 - [ ] Ruff format and lint pass
 - [ ] Test coverage >= 80% overall, >= 90% on transport / soql / pagination
 - [ ] CI green on Ubuntu and macOS
