@@ -8,7 +8,14 @@ import pytest
 import respx
 
 from nukapy import AsyncSocrata, NukapyResult, Socrata
-from nukapy.pagination import PaginationConfig, Paginator
+from nukapy.pagination import (
+    PaginationConfig,
+    Paginator,
+    _and_where,
+    _int_state,
+    _updated_at_where,
+    _with_system_select,
+)
 from nukapy.soql import Query, col
 
 TEST_URL = "https://data.cityofnewyork.us/api/v3/views/erm2-nwe9/query.json"
@@ -176,7 +183,7 @@ def test_iterator_uses_next_id_checkpoint() -> None:
 
     assert first.num_rows == BATCH_SIZE
     assert second.num_rows == 1
-    assert route.call_count == 2  # noqa: PLR2004
+    assert route.call_count == 2
     first_call = cast("Any", respx.calls[0])
     second_call = cast("Any", respx.calls[1])
     first_request = cast("httpx.Request", first_call.request)
@@ -184,3 +191,70 @@ def test_iterator_uses_next_id_checkpoint() -> None:
     assert first_request.url.params["$where"] == ":id > 0"
     assert second_request.url.params["$where"] == ":id > 2"
     assert iterator.checkpoint == {"id": 3}
+
+
+def test_batch_size_zero_raises() -> None:
+    with pytest.raises(ValueError, match="batch_size must be greater than zero"):
+        PaginationConfig(batch_size=0)
+
+
+def test_batch_size_negative_raises() -> None:
+    with pytest.raises(ValueError, match="batch_size must be greater than zero"):
+        PaginationConfig(batch_size=-1)
+
+
+def test_base_params_includes_query_params() -> None:
+    query = Query().where(col("status") == "Open")
+    paginator = Paginator(PaginationConfig(batch_size=5, strategy="id", query=query))
+
+    request = paginator.next_request()
+
+    assert "$where" in request.params
+    assert "Open" in str(request.params["$where"])
+
+
+def test_advance_updated_at_missing_field_raises() -> None:
+    paginator = Paginator(PaginationConfig(batch_size=2, strategy="updated_at"))
+    with pytest.raises(ValueError, match="updated_at pagination requires"):
+        paginator.advance([{":updated_at": 12345, ":id": 1}])
+
+
+def test_advance_id_non_int_raises() -> None:
+    paginator = Paginator(PaginationConfig(batch_size=2, strategy="id"))
+    with pytest.raises(ValueError, match="id pagination requires"):
+        paginator.advance([{":id": "not-an-integer"}])
+
+
+def test_and_where_with_existing() -> None:
+    result = _and_where("existing_clause", "cursor_clause")
+    assert result == "(existing_clause) AND (cursor_clause)"
+
+
+def test_and_where_without_existing() -> None:
+    result = _and_where(None, "cursor_clause")
+    assert result == "cursor_clause"
+
+
+def test_with_system_select_appends_to_existing() -> None:
+    result = _with_system_select("`name`, `amount`", (":id",))
+    assert result == ":id, `name`, `amount`"
+
+
+def test_with_system_select_without_existing() -> None:
+    result = _with_system_select(None, (":id",))
+    assert result == ":id, *"
+
+
+def test_updated_at_where_empty_returns_is_not_null() -> None:
+    result = _updated_at_where("", 0)
+    assert result == ":updated_at IS NOT NULL"
+
+
+def test_int_state_non_decimal_string_returns_default() -> None:
+    result = _int_state({"key": "not-a-number"}, "key", 42)
+    assert result == 42
+
+
+def test_int_state_decimal_string_returns_int() -> None:
+    result = _int_state({"key": "99"}, "key", 0)
+    assert result == 99

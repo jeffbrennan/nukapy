@@ -7,6 +7,7 @@ import pytest
 
 from nukapy.soql import (
     BinaryExpression,
+    Expression,
     Function,
     OrderExpression,
     PostfixExpression,
@@ -15,13 +16,17 @@ from nukapy.soql import (
     avg,
     col,
     count,
+    date_trunc_y,
+    date_trunc_ym,
     date_trunc_ymd,
     distance_in_meters,
     lower,
     max_,
+    min_,
     raw,
     starts_with,
     sum_,
+    upper,
     within_box,
     within_circle,
 )
@@ -183,3 +188,114 @@ def test_explain_includes_warnings() -> None:
 
     assert "Query has no LIMIT clause" in explanation
     assert "Query contains raw SoQL fragments" in explanation
+
+
+def test_in_and_not_in_render() -> None:
+    assert col("status").in_(["Open", "Closed"]).render() == "(`status` IN ('Open', 'Closed'))"
+    assert col("status").not_in(["Open"]).render() == "(`status` NOT IN ('Open'))"
+
+
+def test_between_and_not_between_render() -> None:
+    assert col("amount").between(0, 100).render() == "(`amount` BETWEEN 0 AND 100)"
+    assert col("amount").not_between(0, 100).render() == "(`amount` NOT BETWEEN 0 AND 100)"
+
+
+def test_is_not_null_renders() -> None:
+    assert col("value").is_not_null().render() == "(`value` IS NOT NULL)"
+
+
+def test_lt_le_or_invert_operators() -> None:
+    assert (col("x") < 5).render() == "(`x` < 5)"
+    assert (col("x") <= 5).render() == "(`x` <= 5)"
+    assert ((col("x") == 1) | (col("y") == 2)).render() == "((`x` = 1) OR (`y` = 2))"
+    assert (~col("x").is_null()).render() == "(NOT (`x` IS NULL))"
+
+
+def test_base_expression_render_raises() -> None:
+    class _Bare(Expression):
+        pass
+
+    with pytest.raises(NotImplementedError, match="_Bare must implement _render"):
+        _Bare().render()
+
+
+def test_min_upper_date_trunc_functions_render() -> None:
+    assert min_(col("price")).render() == "min(`price`)"
+    assert upper(col("city")).render() == "upper(`city`)"
+    assert date_trunc_y(col("created_date")).render() == "date_trunc_y(`created_date`)"
+    assert date_trunc_ym(col("created_date")).render() == "date_trunc_ym(`created_date`)"
+
+
+def test_as_expression_rejects_none() -> None:
+    with pytest.raises(TypeError, match="None"):
+        col("x").__eq__(None).render()
+
+
+def test_quote_identifier_rejects_empty() -> None:
+    with pytest.raises(ValueError, match="cannot be empty"):
+        col("").render()
+
+
+def test_validate_function_name_rejects_invalid() -> None:
+    with pytest.raises(ValueError, match="cannot be empty"):
+        Function("", ())
+
+    with pytest.raises(ValueError, match="must start with"):
+        Function("1bad", ())
+
+    with pytest.raises(ValueError, match="only contain"):
+        Function("bad name", ())
+
+
+def test_quote_string_rejects_nul_bytes() -> None:
+    with pytest.raises(ValueError, match="NUL"):
+        (col("x") == "hello\x00world").render()
+
+
+def test_is_raw_expression_detects_nested_raw() -> None:
+    raw_expr = raw("? > 0", 1)
+    assert (col("x") == raw_expr).render()  # BinaryExpression with raw child triggers warning
+    assert Query().where(col("x") == raw_expr).explain().__contains__("raw SoQL")
+
+
+def test_is_raw_expression_in_between_and_in() -> None:
+    raw_expr = raw("? > 0", 1)
+    assert col("x").between(raw_expr, 10).render()
+    assert col("x").in_([raw_expr]).render()
+
+
+def test_is_raw_expression_in_postfix_alias_order() -> None:
+    raw_expr = raw("? > 0", 1)
+    assert raw_expr.is_null().render()
+    assert raw_expr.as_("alias").render()
+    assert raw_expr.asc().render()
+
+
+def test_explain_no_params_shows_none_label() -> None:
+    explanation = Query().explain()
+    assert "<none>" in explanation
+
+
+def test_as_expression_rejects_unsupported_type() -> None:
+    with pytest.raises(TypeError, match="Unsupported SoQL expression value"):
+        col("x").__eq__([1, 2, 3]).render()
+
+
+def test_datetime_literal_renders() -> None:
+    expr = col("created_at") == dt.datetime(2024, 6, 15, 12, 0, 0, tzinfo=dt.UTC)
+    assert "2024-06-15T12:00:00" in expr.render()
+
+
+def test_is_raw_expression_warns_for_in_between_function_unary() -> None:
+    r = raw("? > 0", 1)
+
+    # InExpression with raw value
+    assert "raw SoQL" in Query().where(col("x").in_([r])).explain()
+    # BetweenExpression with raw bound
+    assert "raw SoQL" in Query().where(col("x").between(r, 10)).explain()
+    # Function with raw arg
+    assert "raw SoQL" in Query().where(count(r) > 0).explain()
+    # UnaryExpression (NOT) wrapping raw
+    assert "raw SoQL" in Query().where(~r).explain()
+    # OrderExpression in having (raw not in where/having by default, but we can put raw in having)
+    assert "raw SoQL" in Query().having(r.asc()).explain()
